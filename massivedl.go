@@ -212,7 +212,7 @@ func main() {
 		/* call download function for this batch */
 		for j := 0; j < b; j++ {
 			go func(idx int) {
-				logEntries <- download(entries[i].url, path.Join(p.outputDir, entries[idx].name))
+				logEntries <- download(entries[idx].url, path.Join(p.outputDir, entries[idx].name))
 				wg.Done()
 				return
 			}(i + j)
