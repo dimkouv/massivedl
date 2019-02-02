@@ -13,17 +13,26 @@ import (
 	"time"
 )
 
+// a logEntry has the information a log entry needs
 type logEntry struct {
-	url    string
-	name   string
-	result bool
+	url    string // url of the file we tried to download
+	name   string // name for the output file
+	result bool   // whether or not the file was downloaded
 }
 
+// a dataEntry has the required information to download a file
+// a dataEntry is normally loaded from a .csv file and is stored in a slice
 type dataEntry struct {
 	name string
 	url  string
 }
 
+// loads data entries from a csv file.
+// csv file entries be (output name, url)
+// check examples/ for example .csv files
+// @param filename - The full path of the .csv file to load
+// @param ignoredLines - Number of lines to skip from the beginning
+//                       of the csv file
 func readData(filename string, ignoredLines int) []dataEntry {
 	var entries []dataEntry
 
@@ -46,7 +55,10 @@ func readData(filename string, ignoredLines int) []dataEntry {
 		if len(parts) != 2 {
 			continue
 		}
-		entries = append(entries, dataEntry{parts[0], parts[1]})
+		entries = append(entries, dataEntry{
+			strings.Trim(parts[0], " "),
+			strings.Trim(parts[1], " "),
+		})
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -56,8 +68,10 @@ func readData(filename string, ignoredLines int) []dataEntry {
 	return entries
 }
 
-func download(url, name string) logEntry {
-	logRow := logEntry{url, name, false}
+// Downloads a file on the specified url
+// @param filepath - The file where the output will be saved
+func download(url, filepath string) logEntry {
+	logRow := logEntry{url, filepath, false}
 
 	response, e := http.Get(url)
 	if e != nil {
@@ -65,7 +79,7 @@ func download(url, name string) logEntry {
 	}
 	defer response.Body.Close()
 
-	file, err := os.Create(name)
+	file, err := os.Create(filepath)
 	if err != nil {
 		fmt.Println(err)
 		return logRow
@@ -83,31 +97,42 @@ func download(url, name string) logEntry {
 }
 
 func main() {
-	b := 8
-	filename := "data.csv"
-	ignoredLines := 1
-	outputDir := "downloads"
+	// @TODO replace with cmd line params
+	b := 8                        // number of downloads per batch
+	entriesFilepath := "data.csv" // path of input urls
+	ignoredLines := 1             // skipped lines of input csv file
+	outputDir := "downloads"      // output directory
+
 	totalDownloaded := 0
 
+	// create log file
 	f, err := os.OpenFile("massivedl.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
 	defer f.Close()
+
+	// redirect logger output on the log file
 	log.SetOutput(f)
 
-	entries := readData(filename, ignoredLines)
+	// load urls - entries to download
+	entries := readData(entriesFilepath, ignoredLines)
 	n := len(entries)
 
+	// create downloads dir if it doesn't exist
 	os.MkdirAll(outputDir, os.ModePerm)
 
 	for i := 0; i < n; {
+		// fix batch size for the last iteration
 		if i+b >= n {
 			b = n - i
 		}
 
-		var wg sync.WaitGroup
+		// create a channel for fetching the result logs for this batch
 		logEntries := make(chan logEntry)
+
+		// create a workgroup (synchronization var) for current batch
+		var wg sync.WaitGroup
 		wg.Add(b)
 
 		fmt.Printf("Current batch: %d (~%d %%)\n", i/b, 100*(i+b-1)/n)
@@ -122,7 +147,7 @@ func main() {
 			}(i + j)
 		}
 
-		/* logs for this batch */
+		/* write logs for this batch */
 		go func() {
 			for logI := range logEntries {
 				if logI.result == true {
@@ -132,8 +157,8 @@ func main() {
 			}
 		}()
 
+		// wait for this batch
 		wg.Wait()
-
 		i += b
 	}
 
