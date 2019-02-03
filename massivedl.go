@@ -31,11 +31,11 @@ type dataEntry struct {
 }
 
 type cmdLineParams struct {
-	batchSize       int
-	entriesFilepath string
-	skippedLines    int
-	outputDir       string
-	maxRetries      int
+	concurrentRequests int
+	entriesFilepath    string
+	skippedLines       int
+	outputDir          string
+	maxRetries         int
 }
 
 type statistics struct {
@@ -54,6 +54,7 @@ type statistics struct {
 }
 
 var stats statistics
+var p cmdLineParams
 
 // loads data entries from a csv file.
 // csv file entries be (output name, url)
@@ -153,13 +154,13 @@ func printUsage() {
 		"\tThis utility can be used to download a large list of files from the web in parallel batches.",
 		"\tYou can get really good results when the server you're downloading from has low response time.",
 		"\nOPTIONS",
-		"\t-b <int> ::: Size of a batch ::: default 10",
+		"\t-numWorkers <int> ::: Size of a batch ::: default 10",
 		"\t-i <str> ::: Input csv file with the list of urls",
 		"\t-s <int> ::: Number of skipped lines from input csv ::: default 0",
 		"\t-o <str> ::: Directory to place the downloads ::: default 'downloads'",
 		"\t-r <int> ::: Maximum number of retries for failed downloads ::: default 1",
 		"\nEXAMPLE",
-		"\tmassivedl -b 10 -i data.csv -s 1 -o downloads",
+		"\tmassivedl -numWorkers 10 -i data.csv -s 1 -o downloads",
 		"\nAUTHOR",
 		"\tdimkouv <dimkouv@protonmail.com>",
 		"\tContributions at: https://github.com/dimkouv/massivedl",
@@ -173,9 +174,9 @@ func parseCmdLineParams() cmdLineParams {
 	var err error
 
 	for i := 0; i < len(os.Args)-1; i++ {
-		if strings.Compare(os.Args[i], "-b") == 0 {
-			// -b ::: size of a batch
-			p.batchSize, err = strconv.Atoi(os.Args[i+1])
+		if strings.Compare(os.Args[i], "-numWorkers") == 0 {
+			// -numWorkers ::: size of a batch
+			p.concurrentRequests, err = strconv.Atoi(os.Args[i+1])
 
 			if err != nil {
 				printUsage()
@@ -226,9 +227,17 @@ func updateStatistics(log logEntry, mutex *sync.Mutex) {
 	mutex.Unlock()
 }
 
+func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, mutex *sync.Mutex) {
+	for j := range jobs {
+		res := download(j.url, path.Join(p.outputDir, j.name), p.maxRetries)
+		updateStatistics(res, mutex)
+		results <- res
+	}
+}
+
 func main() {
-	p := parseCmdLineParams()
-	stats = statistics{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	p = parseCmdLineParams()
+	stats = statistics{}
 
 	// mutex for locking stats
 	var mutex = &sync.Mutex{}
@@ -240,7 +249,7 @@ func main() {
 	// create downloads dir if it doesn't exist
 	os.MkdirAll(p.outputDir, os.ModePerm)
 
-	b := p.batchSize
+	numWorkers := p.concurrentRequests
 
 	fmt.Printf("massivedl about to download %d files\n", n)
 
@@ -254,48 +263,24 @@ func main() {
 	// redirect logger output on the log file
 	log.SetOutput(f)
 
-	var wgGlbl sync.WaitGroup
-	wgGlbl.Add(n)
+	jobs := make(chan dataEntry, n)
+	results := make(chan logEntry, n)
 
-	for i := 0; i < n; {
-		// fix batch size for the last iteration
-		if i+b >= n {
-			b = n - i
-		}
-
-		// create a channel for fetching the result logs for this batch
-		logEntries := make(chan logEntry)
-
-		// create a workgroup (synchronization var) for current batch
-		var wg sync.WaitGroup
-		wg.Add(b)
-
-		fmt.Printf("Current batch: %d (~%d %%)\n", i/b, 100*(i+b-1)/n)
-		fmt.Printf("Range:[%d, %d]\n\n", i, i+b-1)
-
-		/* call download function for this batch */
-		for j := 0; j < b; j++ {
-			go func(idx int) {
-				logEntries <- download(entries[idx].url, path.Join(p.outputDir, entries[idx].name), p.maxRetries)
-				wg.Done()
-			}(i + j)
-		}
-
-		/* write logs for this batch */
-		go func() {
-			for logI := range logEntries {
-				wgGlbl.Done()
-				updateStatistics(logI, mutex)
-				log.Println(logI.name, logI.url, logI.result)
-			}
-		}()
-
-		// wait for this batch
-		wg.Wait()
-		i += b
+	// create workers
+	for i := 0; i < numWorkers; i++ {
+		go worker(i, jobs, results, mutex)
 	}
 
-	wgGlbl.Wait() // wait for all logs to be written
+	// start sending jobs
+	for i := 0; i < n; i++ {
+		jobs <- entries[i]
+	}
+	close(jobs)
+
+	for i := 0; i < n; i++ {
+		<-results
+	}
+
 	fmt.Println("\n**COMPLETED**")
 	fmt.Println("Total downloads:", stats.totalDownloaded)
 	fmt.Println("Total failures :", stats.totalFailed)
