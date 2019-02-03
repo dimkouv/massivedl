@@ -29,7 +29,7 @@ massivedl -b 10 -i data.csv -s 1 -o downloads
 
 ### Command line parameters
 ```
--b <int> (default=10)          : Batch size - Number of parallel requests
+-p <int> (default=10)          : Maximum number of parallel requests
 -s <int> (default=0)           : Number of skipped lines from input csv
 -i <str>                       : Input csv file with the list of urls
 -o <str> (default='downloads') : Directory to place the downloads

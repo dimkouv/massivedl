@@ -154,7 +154,7 @@ func printUsage() {
 		"\tThis utility can be used to download a large list of files from the web in parallel batches.",
 		"\tYou can get really good results when the server you're downloading from has low response time.",
 		"\nOPTIONS",
-		"\t-numWorkers <int> ::: Size of a batch ::: default 10",
+		"\t-p <int> ::: Maximum number of parallel requests ::: default 10",
 		"\t-i <str> ::: Input csv file with the list of urls",
 		"\t-s <int> ::: Number of skipped lines from input csv ::: default 0",
 		"\t-o <str> ::: Directory to place the downloads ::: default 'downloads'",
@@ -174,8 +174,8 @@ func parseCmdLineParams() cmdLineParams {
 	var err error
 
 	for i := 0; i < len(os.Args)-1; i++ {
-		if strings.Compare(os.Args[i], "-numWorkers") == 0 {
-			// -numWorkers ::: size of a batch
+		if strings.Compare(os.Args[i], "-p") == 0 {
+			// -p ::: number of parallel requests pool
 			p.concurrentRequests, err = strconv.Atoi(os.Args[i+1])
 
 			if err != nil {
