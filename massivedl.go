@@ -33,6 +33,7 @@ type cmdLineParams struct {
 	entriesFilepath string
 	skippedLines    int
 	outputDir       string
+	maxRetries      int
 }
 
 // loads data entries from a csv file.
@@ -119,6 +120,7 @@ func printUsage() {
 		"\t-i <str> ::: Input csv file with the list of urls",
 		"\t-s <int> ::: Number of skipped lines from input csv ::: default 0",
 		"\t-o <str> ::: Directory to place the downloads ::: default 'downloads'",
+		"\t-r <int> ::: Maximum number of retries for failed downloads ::: default 1",
 		"\nEXAMPLE",
 		"\tmassivedl -b 10 -i data.csv -s 1 -o downloads",
 		"\nAUTHOR",
@@ -130,7 +132,7 @@ func printUsage() {
 }
 
 func parseCmdLineParams() cmdLineParams {
-	p := cmdLineParams{10, "", 0, "downloads"}
+	p := cmdLineParams{10, "", 0, "downloads", 1}
 	var err error
 
 	for i := 0; i < len(os.Args)-1; i++ {
@@ -156,6 +158,14 @@ func parseCmdLineParams() cmdLineParams {
 		} else if strings.Compare(os.Args[i], "-o") == 0 {
 			// -o ::: output - downloads directory
 			p.outputDir = os.Args[i+1]
+		} else if strings.Compare(os.Args[i], "-r") == 0 {
+			// -r ::: maximum number of retries
+			p.maxRetries, err = strconv.Atoi(os.Args[i+1])
+
+			if err != nil || p.maxRetries < 0 {
+				printUsage()
+				log.Fatal("Error parsing command line parameters")
+			}
 		}
 	}
 
