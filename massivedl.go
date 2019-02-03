@@ -92,7 +92,7 @@ func download(url, filepath string, maxRetries int) logEntry {
 
 		response, err = http.Get(url)
 		if err != nil {
-			fmt.Println("Trying again...", url)
+			log.Println("RETRY", totalTries, url, filepath)
 			totalTries++
 			continue
 		}
@@ -254,7 +254,7 @@ func main() {
 					totalDownloaded++
 					mutex.Unlock()
 				}
-				fmt.Println(logI.name, logI.url, logI.result)
+				log.Println(logI.name, logI.url, logI.result)
 			}
 		}()
 
