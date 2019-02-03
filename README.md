@@ -1,5 +1,5 @@
 # massivedl
-Download a list of files in parallel batches.
+Download a list of files in parallel.
 
 ## Install
 
