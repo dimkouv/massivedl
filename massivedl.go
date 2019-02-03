@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 // a logEntry has the information a log entry needs
@@ -79,16 +78,29 @@ func readData(filename string, skippedLines int) []dataEntry {
 
 // Downloads a file on the specified url
 // @param filepath - The file where the output will be saved
-func download(url, filepath string) logEntry {
+func download(url, filepath string, maxRetries int) logEntry {
+	totalTries := 0
 	logRow := logEntry{url, filepath, false}
+	var response *http.Response
+	var err error
+	var file *os.File
 
-	response, e := http.Get(url)
-	if e != nil {
-		return logRow
+	for {
+		if totalTries > maxRetries {
+			return logRow
+		}
+
+		response, err = http.Get(url)
+		if err != nil {
+			fmt.Println("Trying again...", url)
+			totalTries++
+			continue
+		}
+		defer response.Body.Close()
+		break
 	}
-	defer response.Body.Close()
 
-	file, err := os.Create(filepath)
+	file, err = os.Create(filepath)
 	if err != nil {
 		fmt.Println(err)
 		return logRow
@@ -97,10 +109,10 @@ func download(url, filepath string) logEntry {
 
 	_, err = io.Copy(file, response.Body)
 	if err != nil {
+		fmt.Println(err)
 		return logRow
 	}
 
-	time.Sleep(1 * time.Second)
 	logRow.result = true
 	return logRow
 }
@@ -182,6 +194,9 @@ func main() {
 
 	totalDownloaded := 0
 
+	// mutex for locking stats
+	var mutex = &sync.Mutex{}
+
 	// load urls - entries to download
 	entries := readData(p.entriesFilepath, p.skippedLines)
 	n := len(entries)
@@ -203,6 +218,9 @@ func main() {
 	// redirect logger output on the log file
 	log.SetOutput(f)
 
+	var wgGlbl sync.WaitGroup
+	wgGlbl.Add(n)
+
 	for i := 0; i < n; {
 		// fix batch size for the last iteration
 		if i+b >= n {
@@ -222,19 +240,21 @@ func main() {
 		/* call download function for this batch */
 		for j := 0; j < b; j++ {
 			go func(idx int) {
-				logEntries <- download(entries[idx].url, path.Join(p.outputDir, entries[idx].name))
+				logEntries <- download(entries[idx].url, path.Join(p.outputDir, entries[idx].name), p.maxRetries)
 				wg.Done()
-				return
 			}(i + j)
 		}
 
 		/* write logs for this batch */
 		go func() {
 			for logI := range logEntries {
+				wgGlbl.Done()
 				if logI.result == true {
+					mutex.Lock()
 					totalDownloaded++
+					mutex.Unlock()
 				}
-				log.Println(logI.name, logI.url, logI.result)
+				fmt.Println(logI.name, logI.url, logI.result)
 			}
 		}()
 
@@ -243,6 +263,7 @@ func main() {
 		i += b
 	}
 
+	wgGlbl.Wait() // wait for all logs to be written
 	fmt.Println("\n**COMPLETED**")
 	fmt.Println("Total downloads:", totalDownloaded)
 	fmt.Println("Total failures :", n-totalDownloaded)
