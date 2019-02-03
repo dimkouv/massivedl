@@ -11,13 +11,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // a logEntry has the information a log entry needs
 type logEntry struct {
-	url    string // url of the file we tried to download
-	name   string // name for the output file
-	result bool   // whether or not the file was downloaded
+	url      string        // url of the file we tried to download
+	name     string        // name for the output file
+	result   bool          // whether or not the file was downloaded
+	nBytes   uint64        // number of bytes of the downloaded file
+	duration time.Duration // how much time this download needed
 }
 
 // a dataEntry has the required information to download a file
@@ -34,6 +37,23 @@ type cmdLineParams struct {
 	outputDir       string
 	maxRetries      int
 }
+
+type statistics struct {
+	totalDownloaded         int
+	totalFailed             int
+	batchDownloaded         int
+	batchFailed             int
+	currentBatch            int
+	totalBatches            int
+	currentSpeedFilesPerSec int
+	averageSpeedFilesPerSec int
+	currentSpeedBytesPerSec int
+	averageSpeedBytesPerSec int
+	totalDownloadedBytes    int
+	currentBatchBytes       int
+}
+
+var stats statistics
 
 // loads data entries from a csv file.
 // csv file entries be (output name, url)
@@ -80,10 +100,12 @@ func readData(filename string, skippedLines int) []dataEntry {
 // @param filepath - The file where the output will be saved
 func download(url, filepath string, maxRetries int) logEntry {
 	totalTries := 0
-	logRow := logEntry{url, filepath, false}
+	logRow := logEntry{url, filepath, false, 0, 0}
 	var response *http.Response
 	var err error
 	var file *os.File
+
+	startTime := time.Now()
 
 	for {
 		if totalTries > maxRetries {
@@ -107,13 +129,16 @@ func download(url, filepath string, maxRetries int) logEntry {
 	}
 	defer file.Close()
 
-	_, err = io.Copy(file, response.Body)
+	nBytes, err := io.Copy(file, response.Body)
 	if err != nil {
 		fmt.Println(err)
 		return logRow
 	}
 
 	logRow.result = true
+	logRow.nBytes = uint64(nBytes)
+	logRow.duration = (time.Now()).Sub(startTime)
+
 	return logRow
 }
 
@@ -189,10 +214,21 @@ func parseCmdLineParams() cmdLineParams {
 	return p
 }
 
+func updateStatistics(log logEntry, mutex *sync.Mutex) {
+	mutex.Lock()
+
+	if log.result == true {
+		stats.totalDownloaded++
+	} else {
+		stats.totalFailed++
+	}
+
+	mutex.Unlock()
+}
+
 func main() {
 	p := parseCmdLineParams()
-
-	totalDownloaded := 0
+	stats = statistics{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 	// mutex for locking stats
 	var mutex = &sync.Mutex{}
@@ -249,11 +285,7 @@ func main() {
 		go func() {
 			for logI := range logEntries {
 				wgGlbl.Done()
-				if logI.result == true {
-					mutex.Lock()
-					totalDownloaded++
-					mutex.Unlock()
-				}
+				updateStatistics(logI, mutex)
 				log.Println(logI.name, logI.url, logI.result)
 			}
 		}()
@@ -265,7 +297,7 @@ func main() {
 
 	wgGlbl.Wait() // wait for all logs to be written
 	fmt.Println("\n**COMPLETED**")
-	fmt.Println("Total downloads:", totalDownloaded)
-	fmt.Println("Total failures :", n-totalDownloaded)
+	fmt.Println("Total downloads:", stats.totalDownloaded)
+	fmt.Println("Total failures :", stats.totalFailed)
 	fmt.Println("Check massivedl.log for more information")
 }
