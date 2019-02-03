@@ -41,20 +41,16 @@ type cmdLineParams struct {
 type statistics struct {
 	totalDownloaded         int
 	totalFailed             int
-	batchDownloaded         int
-	batchFailed             int
-	currentBatch            int
-	totalBatches            int
-	currentSpeedFilesPerSec int
-	averageSpeedFilesPerSec int
-	currentSpeedBytesPerSec int
-	averageSpeedBytesPerSec int
-	totalDownloadedBytes    int
-	currentBatchBytes       int
+	totalDownloadedBytes    uint64
+	averageSpeedFilesPerSec float64
+	speedBytesPerSec        float64
+	startTime               time.Time
+	filesRemaining          int
 }
 
 var stats statistics
 var p cmdLineParams
+var n int // total downloads
 
 // loads data entries from a csv file.
 // csv file entries be (output name, url)
@@ -62,7 +58,7 @@ var p cmdLineParams
 // @param filename - The full path of the .csv file to load
 // @param skippedLines - Number of lines to skip from the beginning
 //                       of the csv file
-func readData(filename string, skippedLines int) []dataEntry {
+func parseDownloadsFromCsv(filename string, skippedLines int) []dataEntry {
 	var entries []dataEntry
 
 	file, err := os.Open(filename)
@@ -115,7 +111,7 @@ func download(url, filepath string, maxRetries int) logEntry {
 
 		response, err = http.Get(url)
 		if err != nil {
-			log.Println("RETRY", totalTries, url, filepath)
+			log.Println("[RETRY]", totalTries, url, filepath)
 			totalTries++
 			continue
 		}
@@ -125,14 +121,14 @@ func download(url, filepath string, maxRetries int) logEntry {
 
 	file, err = os.Create(filepath)
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 		return logRow
 	}
 	defer file.Close()
 
 	nBytes, err := io.Copy(file, response.Body)
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 		return logRow
 	}
 
@@ -215,8 +211,10 @@ func parseCmdLineParams() cmdLineParams {
 	return p
 }
 
-func updateStatistics(log logEntry, mutex *sync.Mutex) {
-	mutex.Lock()
+func updateStatistics(log logEntry, statsMutex *sync.Mutex) {
+	statsMutex.Lock()
+
+	durationSoFar := (time.Now()).Sub(stats.startTime)
 
 	if log.result == true {
 		stats.totalDownloaded++
@@ -224,34 +222,68 @@ func updateStatistics(log logEntry, mutex *sync.Mutex) {
 		stats.totalFailed++
 	}
 
-	mutex.Unlock()
+	stats.totalDownloadedBytes += log.nBytes
+	stats.speedBytesPerSec = float64(log.nBytes) / log.duration.Seconds()
+	stats.averageSpeedFilesPerSec = float64(stats.totalDownloaded) / durationSoFar.Seconds()
+	stats.filesRemaining = n - (stats.totalDownloaded + stats.totalFailed)
+
+	statsMutex.Unlock()
 }
 
-func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, mutex *sync.Mutex) {
+func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *sync.Mutex) {
 	for j := range jobs {
 		res := download(j.url, path.Join(p.outputDir, j.name), p.maxRetries)
-		updateStatistics(res, mutex)
+		updateStatistics(res, statsMutex)
 		results <- res
 	}
 }
 
-func main() {
-	p = parseCmdLineParams()
-	stats = statistics{}
+func printStatistics() {
+	fmt.Printf("\r%-15d%-15d%-16f%-16f%-16f%-16d",
+		stats.totalDownloaded,
+		stats.totalFailed,
+		float64(stats.totalDownloadedBytes)/1000000.0,
+		stats.averageSpeedFilesPerSec, stats.speedBytesPerSec/1000000.0,
+		stats.filesRemaining,
+	)
+}
 
-	// mutex for locking stats
-	var mutex = &sync.Mutex{}
+func printStatsHeader() {
+	fmt.Printf("\r%-15s%-15s%-16s%-16s%-16s%-16s\n",
+		"Downloads",
+		"Failures",
+		"Total mB",
+		"Files/Sec",
+		"mB/Sec",
+		"Remaining",
+	)
+}
+
+func printStatsEnd() {
+	fmt.Println("\n\nDone! Thanks for using massivedl.")
+}
+
+func main() {
+	// parse command line parameters
+	p = parseCmdLineParams()
+
+	// initialize statistics
+	stats = statistics{}
+	stats.startTime = time.Now()
+	printStatsHeader()
+
+	// statsMutex for locking statistics
+	var statsMutex = &sync.Mutex{}
 
 	// load urls - entries to download
-	entries := readData(p.entriesFilepath, p.skippedLines)
-	n := len(entries)
+	entries := parseDownloadsFromCsv(p.entriesFilepath, p.skippedLines)
+	n = len(entries)
 
 	// create downloads dir if it doesn't exist
 	os.MkdirAll(p.outputDir, os.ModePerm)
 
+	// set number of workers from command line parameters
 	numWorkers := p.concurrentRequests
-
-	fmt.Printf("massivedl about to download %d files\n", n)
 
 	// create log file
 	f, err := os.OpenFile("massivedl.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -263,12 +295,24 @@ func main() {
 	// redirect logger output on the log file
 	log.SetOutput(f)
 
+	// create jobs channel
 	jobs := make(chan dataEntry, n)
+
+	// create results channel
 	results := make(chan logEntry, n)
 
-	// create workers
+	// run output coroutine
+	// this coroutine updates the statics in stdout
+	go func() {
+		for {
+			printStatistics()
+			time.Sleep(500 * time.Millisecond)
+		}
+	}()
+
+	// init worker coroutines
 	for i := 0; i < numWorkers; i++ {
-		go worker(i, jobs, results, mutex)
+		go worker(i, jobs, results, statsMutex)
 	}
 
 	// start sending jobs
@@ -277,12 +321,10 @@ func main() {
 	}
 	close(jobs)
 
+	// catch results
 	for i := 0; i < n; i++ {
 		<-results
 	}
 
-	fmt.Println("\n**COMPLETED**")
-	fmt.Println("Total downloads:", stats.totalDownloaded)
-	fmt.Println("Total failures :", stats.totalFailed)
-	fmt.Println("Check massivedl.log for more information")
+	printStatsEnd()
 }
