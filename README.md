@@ -23,7 +23,7 @@ filename,url
 
 Assuming the file was named `data.csv` we can download the files using
 ```bash
-massivedl -b 10 -i data.csv -s 1 -o downloads
+massivedl -p 10 -i data.csv -s 1 -o downloads
 ```
 
 
@@ -34,3 +34,6 @@ massivedl -b 10 -i data.csv -s 1 -o downloads
 -i <str>                       : Input csv file with the list of urls
 -o <str> (default='downloads') : Directory to place the downloads
 ```
+
+## Use Cases
+With this tool I was able to download about 1.5 million images (~60GB) for a machine learning project.
