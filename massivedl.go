@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -33,27 +35,37 @@ type dataEntry struct {
 	url  string
 }
 
-type cmdLineParams struct {
-	concurrentRequests int
-	entriesFilepath    string
-	skippedLines       int
-	outputDir          string
-	maxRetries         int
+// CmdLineParams - Configuration struct
+type CmdLineParams struct {
+	ConcurrentRequests int    `json:"concurrentRequests"`
+	EntriesFilepath    string `json:"entriesFilepath"`
+	SkippedLines       int    `json:"skippedLines"`
+	OutputDir          string `json:"outputDir"`
+	MaxRetries         int    `json:"maxRetries"`
+	Offset             int    `json:"offset"`
 }
 
-type statistics struct {
-	totalDownloaded         int
-	totalFailed             int
-	totalDownloadedBytes    uint64
-	averageSpeedFilesPerSec float64
-	speedBytesPerSec        float64
-	startTime               time.Time
-	filesRemaining          int
-	averageSpeedBytesPerSec float64
+// Statistics - statistics about the downloads
+type Statistics struct {
+	TotalDownloaded         int       `json:"totalDownloaded"`
+	TotalFailed             int       `json:"totalFailed"`
+	TotalDownloadedBytes    uint64    `json:"totalDownloadedBytes"`
+	AverageSpeedFilesPerSec float64   `json:"averageSpeedFilesPerSec"`
+	SpeedBytesPerSec        float64   `json:"speedBytesPerSec"`
+	StartTime               time.Time `json:"startTime"`
+	FilesRemaining          int       `json:"filesRemaining"`
+	AverageSpeedBytesPerSec float64   `json:"averageSpeedBytesPerSec"`
 }
 
-var stats statistics
-var p cmdLineParams
+// SaveEntry - data required for saving/loading progress
+type SaveEntry struct {
+	WorkingDirectory string        `json:"workingDirectory"`
+	Parameters       CmdLineParams `json:"cmdLineParams"`
+	Stats            Statistics    `json:"stats"`
+}
+
+var stats Statistics
+var p CmdLineParams
 var n int            // total downloads
 var stopWorking bool // workers check this flag before tkaing a job
 
@@ -171,45 +183,50 @@ func printUsage() {
 	fmt.Println(strings.Join(usage[:], "\n"))
 }
 
-func parseCmdLineParams() cmdLineParams {
-	p := cmdLineParams{10, "", 0, "downloads", 1}
+func parseCmdLineParams() CmdLineParams {
+	p := CmdLineParams{10, "", 0, "downloads", 1, 0}
 	var err error
 
-	for i := 0; i < len(os.Args)-1; i++ {
-		if strings.Compare(os.Args[i], "-p") == 0 {
-			// -p ::: number of parallel requests pool
-			p.concurrentRequests, err = strconv.Atoi(os.Args[i+1])
+	// check if user wants to load a saved progress
+	if len(os.Args) == 3 && strings.Compare("--load", os.Args[1]) == 0 {
+		p = loadProgress(os.Args[2])
+	} else {
+		for i := 0; i < len(os.Args)-1; i++ {
+			if strings.Compare(os.Args[i], "-p") == 0 {
+				// -p ::: number of parallel requests pool
+				p.ConcurrentRequests, err = strconv.Atoi(os.Args[i+1])
 
-			if err != nil {
-				printUsage()
-				log.Fatal("Error parsing command line parameters")
-			}
-		} else if strings.Compare(os.Args[i], "-i") == 0 {
-			// -i ::: entries file path
-			p.entriesFilepath = os.Args[i+1]
-		} else if strings.Compare(os.Args[i], "-s") == 0 {
-			// -s ::: number of skipped lines
-			p.skippedLines, err = strconv.Atoi(os.Args[i+1])
+				if err != nil {
+					printUsage()
+					log.Fatal("Error parsing command line parameters")
+				}
+			} else if strings.Compare(os.Args[i], "-i") == 0 {
+				// -i ::: entries file path
+				p.EntriesFilepath = os.Args[i+1]
+			} else if strings.Compare(os.Args[i], "-s") == 0 {
+				// -s ::: number of skipped lines
+				p.SkippedLines, err = strconv.Atoi(os.Args[i+1])
 
-			if err != nil {
-				printUsage()
-				log.Fatal("Error parsing command line parameters")
-			}
-		} else if strings.Compare(os.Args[i], "-o") == 0 {
-			// -o ::: output - downloads directory
-			p.outputDir = os.Args[i+1]
-		} else if strings.Compare(os.Args[i], "-r") == 0 {
-			// -r ::: maximum number of retries
-			p.maxRetries, err = strconv.Atoi(os.Args[i+1])
+				if err != nil {
+					printUsage()
+					log.Fatal("Error parsing command line parameters")
+				}
+			} else if strings.Compare(os.Args[i], "-o") == 0 {
+				// -o ::: output - downloads directory
+				p.OutputDir = os.Args[i+1]
+			} else if strings.Compare(os.Args[i], "-r") == 0 {
+				// -r ::: maximum number of retries
+				p.MaxRetries, err = strconv.Atoi(os.Args[i+1])
 
-			if err != nil || p.maxRetries < 0 {
-				printUsage()
-				log.Fatal("Error parsing command line parameters")
+				if err != nil || p.MaxRetries < 0 {
+					printUsage()
+					log.Fatal("Error parsing command line parameters")
+				}
 			}
 		}
 	}
 
-	if strings.Compare(p.entriesFilepath, "") == 0 {
+	if strings.Compare(p.EntriesFilepath, "") == 0 {
 		printUsage()
 		log.Fatal("You have to provide input csv file using -i cmd line param.")
 	}
@@ -220,19 +237,19 @@ func parseCmdLineParams() cmdLineParams {
 func updateStatistics(log logEntry, statsMutex *sync.Mutex) {
 	statsMutex.Lock()
 
-	durationSoFar := (time.Now()).Sub(stats.startTime)
+	durationSoFar := (time.Now()).Sub(stats.StartTime)
 
 	if log.result == true {
-		stats.totalDownloaded++
+		stats.TotalDownloaded++
 	} else {
-		stats.totalFailed++
+		stats.TotalFailed++
 	}
 
-	stats.totalDownloadedBytes += log.nBytes
-	stats.speedBytesPerSec = float64(log.nBytes) / log.duration.Seconds()
-	stats.averageSpeedFilesPerSec = float64(stats.totalDownloaded) / durationSoFar.Seconds()
-	stats.averageSpeedBytesPerSec = float64(stats.totalDownloadedBytes) / (durationSoFar.Seconds())
-	stats.filesRemaining = n - (stats.totalDownloaded + stats.totalFailed)
+	stats.TotalDownloadedBytes += log.nBytes
+	stats.SpeedBytesPerSec = float64(log.nBytes) / log.duration.Seconds()
+	stats.AverageSpeedFilesPerSec = float64(stats.TotalDownloaded) / durationSoFar.Seconds()
+	stats.AverageSpeedBytesPerSec = float64(stats.TotalDownloadedBytes) / (durationSoFar.Seconds())
+	stats.FilesRemaining = n - (stats.TotalDownloaded + stats.TotalFailed)
 
 	statsMutex.Unlock()
 }
@@ -247,7 +264,7 @@ func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *
 			break
 		}
 
-		res := download(j.url, path.Join(p.outputDir, j.name), p.maxRetries)
+		res := download(j.url, path.Join(p.OutputDir, j.name), p.MaxRetries)
 		updateStatistics(res, statsMutex)
 		writeToLog(res)
 		results <- res
@@ -256,12 +273,12 @@ func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *
 
 func printStatistics() {
 	fmt.Printf("\r%-9d | %-10d | %-10.2f | %-11.2f | %-7.2f | %-10d | %-11.2f |",
-		stats.totalDownloaded,
-		stats.totalFailed,
-		float64(stats.totalDownloadedBytes)/1000000.0,
-		stats.averageSpeedFilesPerSec, stats.speedBytesPerSec/1000000.0,
-		stats.filesRemaining,
-		stats.averageSpeedBytesPerSec/1000000,
+		stats.TotalDownloaded,
+		stats.TotalFailed,
+		float64(stats.TotalDownloadedBytes)/1000000.0,
+		stats.AverageSpeedFilesPerSec, stats.SpeedBytesPerSec/1000000.0,
+		stats.FilesRemaining,
+		stats.AverageSpeedBytesPerSec/1000000,
 	)
 }
 
@@ -278,7 +295,7 @@ func printStatsHeader() {
 }
 
 func printStatsEnd() {
-	durationSoFar := (time.Now()).Sub(stats.startTime)
+	durationSoFar := (time.Now()).Sub(stats.StartTime)
 
 	fmt.Println("\n\nTotal time:", durationSoFar)
 	fmt.Println("Thanks for using massivedl.")
@@ -316,9 +333,71 @@ func getSaveFilesDirectory() string {
 	return saveFilesDirPath
 }
 
+func getCurrentTimestamp() int64 {
+	return time.Now().Unix()
+}
+
+func getSaveFilePath() string {
+	filename := fmt.Sprintf("%d_progress.save", getCurrentTimestamp())
+	return path.Join(getSaveFilesDirectory(), filename)
+}
+
+// saves current progress to a save file
 func saveProgress() {
-	// @TODO
-	fmt.Println("Saving progress...", getSaveFilesDirectory())
+	var err error
+
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var save SaveEntry
+	p.Offset = n - stats.FilesRemaining - 1
+	save.WorkingDirectory = wd
+	save.Parameters = p
+	save.Stats = stats
+
+	b, err := json.Marshal(save)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	saveFilePath := getSaveFilePath()
+
+	err = ioutil.WriteFile(saveFilePath, b, os.ModePerm)
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		fmt.Println("\nProgress has been saved!")
+		fmt.Println("Use the following command to continue downloading")
+		fmt.Printf("\n\tmassivedl --load %s\n", saveFilePath)
+	}
+}
+
+// loads progress from a saved progress file
+func loadProgress(saveFile string) CmdLineParams {
+	var err error
+
+	b, err := ioutil.ReadFile(saveFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var l SaveEntry
+	err = json.Unmarshal(b, &l)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// load statistics
+	stats = l.Stats
+	// reset stats that do not make sense to be loaded
+	stats.AverageSpeedBytesPerSec = 0
+	stats.AverageSpeedFilesPerSec = 0
+	stats.SpeedBytesPerSec = 0
+	stats.StartTime = time.Now()
+
+	return l.Parameters
 }
 
 // index of value in slice of strings
@@ -388,15 +467,10 @@ func registerSignalHandlers() {
 }
 
 func main() {
-	// parse command line parameters
-	p = parseCmdLineParams()
-
-	// register signal handlers
-	registerSignalHandlers()
-
 	// initialize statistics
-	stats = statistics{}
-	stats.startTime = time.Now()
+	// statistics should be initialized before parsing cmdLineParams
+	stats = Statistics{}
+	stats.StartTime = time.Now()
 	printStatsHeader()
 
 	// flag that is raised on SIGINT signal
@@ -405,18 +479,24 @@ func main() {
 	// statsMutex for locking statistics
 	var statsMutex = &sync.Mutex{}
 
+	// create downloads dir if it doesn't exist
+	os.MkdirAll(p.OutputDir, os.ModePerm)
+
+	// register signal handlers
+	registerSignalHandlers()
+
+	// parse command line parameters
+	p = parseCmdLineParams()
+
 	// load urls - entries to download
-	entries := parseDownloadsFromCsv(p.entriesFilepath, p.skippedLines)
+	entries := parseDownloadsFromCsv(p.EntriesFilepath, p.SkippedLines)
 	n = len(entries)
 
-	// create downloads dir if it doesn't exist
-	os.MkdirAll(p.outputDir, os.ModePerm)
-
 	// set number of workers from command line parameters
-	numWorkers := p.concurrentRequests
+	numWorkers := p.ConcurrentRequests
 
 	// create log file
-	f, err := os.OpenFile(path.Join(getSaveFilesDirectory(), "massivedl.log"), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile(path.Join(getSaveFilesDirectory(), "massivedl.log"), os.O_RDWR|os.O_CREATE|os.O_APPEND, os.ModePerm)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
