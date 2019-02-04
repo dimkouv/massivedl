@@ -11,11 +11,11 @@ func TestStrIndexOf(t *testing.T) {
 	s := []string{"hello", "my", "name", "is", "1"}
 
 	if strIndexOf(s, "1") != 4 {
-		t.Errorf("Invalid index of '1")
+		t.Errorf("Invalid index of '1\n")
 	}
 
 	if strIndexOf(s, "name") != 2 {
-		t.Errorf("Invalid index of 'name'")
+		t.Errorf("Invalid index of 'name'\n")
 	}
 }
 
@@ -41,6 +41,14 @@ func TestAskUserBool(t *testing.T) {
 	res := askUserBool("enter:", false, in)
 
 	if res != true {
-		t.Errorf("Wrong response, should return true.")
+		t.Errorf("Wrong response, should return true.\n")
+	}
+}
+
+func TestParseDownloadsFromCsv(t *testing.T) {
+	downloads := parseDownloadsFromCsv("./examples/list-of-photos.csv", 1)
+
+	if len(downloads) != 11 {
+		t.Errorf("examples/list-of-photos.csv returned %d entries instead of 11\n", len(downloads))
 	}
 }
