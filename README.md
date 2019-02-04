@@ -37,5 +37,20 @@ massivedl -p 10 -i data.csv -s 1 -o downloads
 -o <str> (default='downloads') : Directory to place the downloads
 ```
 
+### Stop and continue later
+You can stop and continue downloading later.  
+Press `Ctrl+C` then you will have the following dialog.
+
+```bash
+...
+Do you want to save progress? [Y/n]: yes
+
+Progress has been saved!
+Use the following command to continue downloading
+
+	massivedl --load /path/to/savedfile.save
+```
+
+
 ## Use Cases
 With this tool I was able to download about 1.5 million images (~60GB) for a machine learning project.
