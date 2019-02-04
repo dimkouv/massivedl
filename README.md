@@ -1,6 +1,8 @@
 # massivedl
 Download a list of files in parallel.
 
+![](screenshots/output.gif)
+
 ## Install
 
 ```bash

@@ -46,6 +46,7 @@ type statistics struct {
 	speedBytesPerSec        float64
 	startTime               time.Time
 	filesRemaining          int
+	averageSpeedBytesPerSec float64
 }
 
 var stats statistics
@@ -119,6 +120,8 @@ func download(url, filepath string, maxRetries int) logEntry {
 		break
 	}
 
+	logRow.duration = (time.Now()).Sub(startTime)
+
 	file, err = os.Create(filepath)
 	if err != nil {
 		log.Fatal(err)
@@ -134,7 +137,6 @@ func download(url, filepath string, maxRetries int) logEntry {
 
 	logRow.result = true
 	logRow.nBytes = uint64(nBytes)
-	logRow.duration = (time.Now()).Sub(startTime)
 
 	return logRow
 }
@@ -225,6 +227,7 @@ func updateStatistics(log logEntry, statsMutex *sync.Mutex) {
 	stats.totalDownloadedBytes += log.nBytes
 	stats.speedBytesPerSec = float64(log.nBytes) / log.duration.Seconds()
 	stats.averageSpeedFilesPerSec = float64(stats.totalDownloaded) / durationSoFar.Seconds()
+	stats.averageSpeedBytesPerSec = float64(stats.totalDownloadedBytes) / (durationSoFar.Seconds())
 	stats.filesRemaining = n - (stats.totalDownloaded + stats.totalFailed)
 
 	statsMutex.Unlock()
@@ -239,28 +242,33 @@ func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *
 }
 
 func printStatistics() {
-	fmt.Printf("\r%-15d%-15d%-16f%-16f%-16f%-16d",
+	fmt.Printf("\r%-9d | %-10d | %-10.2f | %-11.2f | %-7.2f | %-10d | %-11.2f |",
 		stats.totalDownloaded,
 		stats.totalFailed,
 		float64(stats.totalDownloadedBytes)/1000000.0,
 		stats.averageSpeedFilesPerSec, stats.speedBytesPerSec/1000000.0,
 		stats.filesRemaining,
+		stats.averageSpeedBytesPerSec/1000000,
 	)
 }
 
 func printStatsHeader() {
-	fmt.Printf("\r%-15s%-15s%-16s%-16s%-16s%-16s\n",
+	fmt.Printf("\n%-9s | %-10s | %-10s | %-11s | %-7s | %-10s | %-11s |\n",
 		"Downloads",
 		"Failures",
 		"Total mB",
 		"Files/Sec",
 		"mB/Sec",
 		"Remaining",
+		"Avg mB/Sec",
 	)
 }
 
 func printStatsEnd() {
-	fmt.Println("\n\nDone! Thanks for using massivedl.")
+	durationSoFar := (time.Now()).Sub(stats.startTime)
+
+	fmt.Println("\n\nTotal time:", durationSoFar)
+	fmt.Println("Thanks for using massivedl.")
 }
 
 func main() {
@@ -326,5 +334,6 @@ func main() {
 		<-results
 	}
 
+	printStatistics()
 	printStatsEnd()
 }
