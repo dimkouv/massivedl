@@ -7,10 +7,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -51,7 +53,8 @@ type statistics struct {
 
 var stats statistics
 var p cmdLineParams
-var n int // total downloads
+var n int            // total downloads
+var stopWorking bool // workers check this flag before tkaing a job
 
 // loads data entries from a csv file.
 // csv file entries be (output name, url)
@@ -235,6 +238,10 @@ func updateStatistics(log logEntry, statsMutex *sync.Mutex) {
 
 func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *sync.Mutex) {
 	for j := range jobs {
+		if stopWorking {
+			break
+		}
+
 		res := download(j.url, path.Join(p.outputDir, j.name), p.maxRetries)
 		updateStatistics(res, statsMutex)
 		results <- res
@@ -271,14 +278,90 @@ func printStatsEnd() {
 	fmt.Println("Thanks for using massivedl.")
 }
 
+func saveProgress() {
+	fmt.Println("Saving progress...")
+}
+
+// index of value in slice of strings
+func strIndexOf(s []string, v string) int {
+	for i := 0; i < len(s); i++ {
+		if strings.Compare(v, s[i]) == 0 {
+			return i
+		}
+	}
+	return -1
+}
+
+// ask user a yes/no question and get the result
+func askUserBool(msg string, defaultChoice bool, in *os.File) bool {
+	if in == nil {
+		in = os.Stdin
+	}
+
+	choicesTrue := []string{"yes", "1", "y", "yeah"}
+	choicesFalse := []string{"no", "0", "n", "nah"}
+
+	reader := bufio.NewReader(in)
+
+	fmt.Print("\n", msg)
+	if defaultChoice {
+		fmt.Print(" [Y/n]")
+	} else {
+		fmt.Print(" [y/N]")
+	}
+	fmt.Print(": ")
+
+	text, _ := reader.ReadString('\n')
+
+	if strings.HasSuffix(text, "\n") {
+		text = strings.Split(text, "\n")[0]
+	}
+
+	reply := strings.ToLower(text)
+
+	if strIndexOf(choicesTrue, reply) >= 0 {
+		return true
+	}
+
+	if strIndexOf(choicesFalse, reply) >= 0 {
+		return false
+	}
+
+	return defaultChoice
+}
+
+func registerSignalHandlers() {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, syscall.SIGINT)
+
+	go func() {
+		<-sigc
+		stopWorking = true
+		printStatistics()
+		printStatsEnd()
+
+		if askUserBool("Do you want to save progress?", true, nil) == true {
+			saveProgress()
+		}
+
+		os.Exit(0)
+	}()
+}
+
 func main() {
 	// parse command line parameters
 	p = parseCmdLineParams()
+
+	// register signal handlers
+	registerSignalHandlers()
 
 	// initialize statistics
 	stats = statistics{}
 	stats.startTime = time.Now()
 	printStatsHeader()
+
+	// flag that is raised on SIGINT signal
+	stopWorking = false
 
 	// statsMutex for locking statistics
 	var statsMutex = &sync.Mutex{}
@@ -312,7 +395,7 @@ func main() {
 	// run output coroutine
 	// this coroutine updates the statics in stdout
 	go func() {
-		for {
+		for !stopWorking {
 			printStatistics()
 			time.Sleep(500 * time.Millisecond)
 		}
