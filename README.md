@@ -1,5 +1,5 @@
 # massivedl
-Download a list of files in parallel.
+Download a large list of files in parallel.
 
 ![](screenshots/output.gif)
 
