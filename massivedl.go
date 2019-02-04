@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
 	"path"
 	"strconv"
 	"strings"
@@ -236,6 +237,10 @@ func updateStatistics(log logEntry, statsMutex *sync.Mutex) {
 	statsMutex.Unlock()
 }
 
+func writeToLog(res logEntry) {
+	log.Println(res.url, res.name, res.result, res.nBytes, res.duration)
+}
+
 func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *sync.Mutex) {
 	for j := range jobs {
 		if stopWorking {
@@ -244,6 +249,7 @@ func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *
 
 		res := download(j.url, path.Join(p.outputDir, j.name), p.maxRetries)
 		updateStatistics(res, statsMutex)
+		writeToLog(res)
 		results <- res
 	}
 }
@@ -278,8 +284,40 @@ func printStatsEnd() {
 	fmt.Println("Thanks for using massivedl.")
 }
 
+func fileOrPathExists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+
+	log.Fatal(err)
+	return false
+}
+
+func getUserHomeDirectory() string {
+	usr, err := user.Current()
+	if err != nil {
+		log.Fatal(err)
+	}
+	return usr.HomeDir
+}
+
+func getSaveFilesDirectory() string {
+	homeDir := getUserHomeDirectory()
+	saveFilesDirPath := path.Join(homeDir, ".massivedl")
+
+	if !fileOrPathExists(saveFilesDirPath) {
+		os.MkdirAll(saveFilesDirPath, os.ModePerm)
+	}
+
+	return saveFilesDirPath
+}
+
 func saveProgress() {
-	fmt.Println("Saving progress...")
+	fmt.Println("Saving progress...", getSaveFilesDirectory())
 }
 
 // index of value in slice of strings
@@ -377,7 +415,7 @@ func main() {
 	numWorkers := p.concurrentRequests
 
 	// create log file
-	f, err := os.OpenFile("massivedl.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile(path.Join(getSaveFilesDirectory(), "massivedl.log"), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
