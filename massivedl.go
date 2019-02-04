@@ -73,9 +73,9 @@ var stopWorking bool // workers check this flag before tkaing a job
 // csv file entries be (output name, url)
 // check examples/ for example .csv files
 // @param filename - The full path of the .csv file to load
-// @param skippedLines - Number of lines to skip from the beginning
+// @param offset - Number of lines to skip from the beginning
 //                       of the csv file
-func parseDownloadsFromCsv(filename string, skippedLines int) []dataEntry {
+func parseDownloadsFromCsv(filename string, offset int) []dataEntry {
 	var entries []dataEntry
 
 	file, err := os.Open(filename)
@@ -87,7 +87,7 @@ func parseDownloadsFromCsv(filename string, skippedLines int) []dataEntry {
 	scanner := bufio.NewScanner(file)
 
 	/* pass the skipped lines */
-	for i := 0; i < skippedLines; i++ {
+	for i := 0; i < offset; i++ {
 		scanner.Scan()
 	}
 
@@ -397,6 +397,12 @@ func loadProgress(saveFile string) CmdLineParams {
 	stats.SpeedBytesPerSec = 0
 	stats.StartTime = time.Now()
 
+	err = os.Chdir(l.WorkingDirectory)
+	if err != nil {
+		fmt.Println("(warning) The directory you executed massivedl in the past")
+		fmt.Println("doesn't exist. If input file was a relative path then it might fail.")
+	}
+
 	return l.Parameters
 }
 
@@ -489,7 +495,7 @@ func main() {
 	p = parseCmdLineParams()
 
 	// load urls - entries to download
-	entries := parseDownloadsFromCsv(p.EntriesFilepath, p.SkippedLines)
+	entries := parseDownloadsFromCsv(p.EntriesFilepath, p.SkippedLines+p.Offset)
 	n = len(entries)
 
 	// set number of workers from command line parameters
