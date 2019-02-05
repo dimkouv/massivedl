@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"os/user"
 	"path"
 	"strconv"
 	"strings"
@@ -110,87 +109,18 @@ func parseDownloadsFromCsv(filename string, offset int) []dataEntry {
 	return entries
 }
 
-// Downloads a file on the specified url
-// @param filepath - The file where the output will be saved
-func download(url, filepath string, maxRetries int) logEntry {
-	totalTries := 0
-	logRow := logEntry{url, filepath, false, 0, 0}
-	var response *http.Response
-	var err error
-	var file *os.File
-
-	startTime := time.Now()
-
-	for {
-		if totalTries > maxRetries {
-			return logRow
-		}
-
-		response, err = http.Get(url)
-		if err != nil {
-			log.Println("[RETRY]", totalTries, url, filepath)
-			totalTries++
-			continue
-		}
-		defer response.Body.Close()
-		break
-	}
-
-	logRow.duration = (time.Now()).Sub(startTime)
-
-	file, err = os.Create(filepath)
-	if err != nil {
-		log.Fatal(err)
-		return logRow
-	}
-	defer file.Close()
-
-	nBytes, err := io.Copy(file, response.Body)
-	if err != nil {
-		log.Fatal(err)
-		return logRow
-	}
-
-	logRow.result = true
-	logRow.nBytes = uint64(nBytes)
-
-	return logRow
-}
-
-func printUsage() {
-	usage := [...]string{
-		"NAME",
-		"\tmassivedl - Download a list of files in parallel batches",
-		"\nSYNOPSIS",
-		"\tmassivedl [OPTION]...",
-		"\nDESCRIPTION",
-		"\tmassivedl is a free utility for non-interactive download of files from the web.",
-		"\tThis utility can be used to download a large list of files from the web in parallel batches.",
-		"\tYou can get really good results when the server you're downloading from has low response time.",
-		"\nOPTIONS",
-		"\t-p <int> (default=10)          ::: Maximum number of parallel requests",
-		"\t-i <str>                       ::: Input csv file with the list of urls",
-		"\t-s <int> (default=0)           ::: Number of skipped lines from input csv",
-		"\t-o <str> (default='downloads') ::: Directory to place the downloads",
-		"\t-r <int> (default=1)           ::: Maximum number of retries for failed downloads",
-		"\nEXAMPLE",
-		"\tmassivedl -p 10 -i data.csv -s 1 -o downloads",
-		"\nAUTHOR",
-		"\tdimkouv <dimkouv@protonmail.com>",
-		"\tContributions at: https://github.com/dimkouv/massivedl",
-		"\n",
-	}
-	fmt.Println(strings.Join(usage[:], "\n"))
-}
-
 func parseCmdLineParams() CmdLineParams {
 	p := CmdLineParams{10, "", 0, "downloads", 1, 0}
 	var err error
 
-	// check if user wants to load a saved progress
-	if len(os.Args) == 3 && strings.Compare("--load", os.Args[1]) == 0 {
+	if strIndexOf(os.Args, "--help") >= 0 {
+		// just print help message and exit
+		printUsageAndExit()
+	} else if len(os.Args) == 3 && strings.Compare("--load", os.Args[1]) == 0 {
+		// check if user wants to load a saved progress
 		p = loadProgress(os.Args[2])
 	} else {
+		// read parameters
 		for i := 0; i < len(os.Args)-1; i++ {
 			if strings.Compare(os.Args[i], "-p") == 0 {
 				// -p ::: number of parallel requests pool
@@ -227,11 +157,48 @@ func parseCmdLineParams() CmdLineParams {
 	}
 
 	if strings.Compare(p.EntriesFilepath, "") == 0 {
-		printUsage()
-		log.Fatal("You have to provide input csv file using -i cmd line param.")
+		fmt.Println(
+			"You have to provide input csv file using -i cmd line param.\n",
+			"\rUse: massivedl --help for full reference.",
+		)
+		os.Exit(1)
 	}
 
 	return p
+}
+
+func printUsage() {
+	usage := [...]string{
+		"NAME",
+		"\tmassivedl v" + Version + " - Download a list of files in parallel batches",
+		"\nSYNOPSIS",
+		"\tmassivedl [OPTION]...",
+		"\nDESCRIPTION",
+		"\tmassivedl is a free utility for non-interactive download of files from the web.",
+		"\tThis utility can be used to download a large list of files from the web in parallel batches.",
+		"\tYou can get really good results when the server you're downloading from has low response time.",
+		"\nOPTIONS",
+		"\t-p <int> (default=10)          ::: Maximum number of parallel requests",
+		"\t-i <str>                       ::: Input csv file with the list of urls",
+		"\t-s <int> (default=0)           ::: Number of skipped lines from input csv",
+		"\t-o <str> (default='downloads') ::: Directory to place the downloads",
+		"\t-r <int> (default=1)           ::: Maximum number of retries for failed downloads",
+		"\nEXAMPLE",
+		"\tmassivedl -p 10 -i data.csv -s 1 -o downloads",
+		"\nAUTHOR",
+		"\tdimkouv <dimkouv@protonmail.com>",
+		"\tContributions at: https://github.com/dimkouv/massivedl",
+		"\nBUILD INFO",
+		"\tVersion:    " + Version,
+		"\tBuildstamp: " + Buildstamp,
+		"\tGithash:    " + Githash,
+	}
+	fmt.Println(strings.Join(usage[:], "\n"))
+}
+
+func printUsageAndExit() {
+	printUsage()
+	os.Exit(0)
 }
 
 func updateStatistics(log logEntry, statsMutex *sync.Mutex) {
@@ -252,23 +219,6 @@ func updateStatistics(log logEntry, statsMutex *sync.Mutex) {
 	stats.FilesRemaining = n - (stats.TotalDownloaded + stats.TotalFailed)
 
 	statsMutex.Unlock()
-}
-
-func writeToLog(res logEntry) {
-	log.Println(res.url, res.name, res.result, res.nBytes, res.duration)
-}
-
-func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *sync.Mutex) {
-	for j := range jobs {
-		if stopWorking {
-			break
-		}
-
-		res := download(j.url, path.Join(p.OutputDir, j.name), p.MaxRetries)
-		updateStatistics(res, statsMutex)
-		writeToLog(res)
-		results <- res
-	}
 }
 
 func printStatistics() {
@@ -301,27 +251,6 @@ func printStatsEnd() {
 	fmt.Println("Thanks for using massivedl.")
 }
 
-func fileOrPathExists(path string) bool {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true
-	}
-	if os.IsNotExist(err) {
-		return false
-	}
-
-	log.Fatal(err)
-	return false
-}
-
-func getUserHomeDirectory() string {
-	usr, err := user.Current()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return usr.HomeDir
-}
-
 func getSaveFilesDirectory() string {
 	homeDir := getUserHomeDirectory()
 	saveFilesDirPath := path.Join(homeDir, ".massivedl")
@@ -331,10 +260,6 @@ func getSaveFilesDirectory() string {
 	}
 
 	return saveFilesDirPath
-}
-
-func getCurrentTimestamp() int64 {
-	return time.Now().Unix()
 }
 
 func getSaveFilePath() string {
@@ -406,54 +331,6 @@ func loadProgress(saveFile string) CmdLineParams {
 	return l.Parameters
 }
 
-// index of value in slice of strings
-func strIndexOf(s []string, v string) int {
-	for i := 0; i < len(s); i++ {
-		if strings.Compare(v, s[i]) == 0 {
-			return i
-		}
-	}
-	return -1
-}
-
-// ask user a yes/no question and get the result
-func askUserBool(msg string, defaultChoice bool, in *os.File) bool {
-	if in == nil {
-		in = os.Stdin
-	}
-
-	choicesTrue := []string{"yes", "1", "y", "yeah"}
-	choicesFalse := []string{"no", "0", "n", "nah"}
-
-	reader := bufio.NewReader(in)
-
-	fmt.Print("\n", msg)
-	if defaultChoice {
-		fmt.Print(" [Y/n]")
-	} else {
-		fmt.Print(" [y/N]")
-	}
-	fmt.Print(": ")
-
-	text, _ := reader.ReadString('\n')
-
-	if strings.HasSuffix(text, "\n") {
-		text = strings.Split(text, "\n")[0]
-	}
-
-	reply := strings.ToLower(text)
-
-	if strIndexOf(choicesTrue, reply) >= 0 {
-		return true
-	}
-
-	if strIndexOf(choicesFalse, reply) >= 0 {
-		return false
-	}
-
-	return defaultChoice
-}
-
 func registerSignalHandlers() {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT)
@@ -472,27 +349,85 @@ func registerSignalHandlers() {
 	}()
 }
 
-func main() {
-	// initialize statistics
-	// statistics should be initialized before parsing cmdLineParams
-	stats = Statistics{}
-	stats.StartTime = time.Now()
-	printStatsHeader()
+// Downloads a file on the specified url
+// @param filepath - The file where the output will be saved
+func download(url, filepath string, maxRetries int) logEntry {
+	totalTries := 0
+	logRow := logEntry{url, filepath, false, 0, 0}
+	var response *http.Response
+	var err error
+	var file *os.File
 
+	startTime := time.Now()
+
+	for {
+		if totalTries > maxRetries {
+			return logRow
+		}
+
+		response, err = http.Get(url)
+		if err != nil {
+			log.Println("[RETRY]", totalTries, url, filepath)
+			totalTries++
+			continue
+		}
+		defer response.Body.Close()
+		break
+	}
+
+	logRow.duration = (time.Now()).Sub(startTime)
+
+	// create subdirs if they do not exist
+	parts := strings.Split(filepath, "/")
+	if len(parts) > 1 {
+		path := strings.Join(parts[:len(parts)-1], "/")
+		os.MkdirAll(path, os.ModePerm)
+	}
+
+	file, err = os.Create(filepath)
+	if err != nil {
+		log.Fatal(err)
+		return logRow
+	}
+	defer file.Close()
+
+	nBytes, err := io.Copy(file, response.Body)
+	if err != nil {
+		log.Fatal(err)
+		return logRow
+	}
+
+	logRow.result = true
+	logRow.nBytes = uint64(nBytes)
+
+	return logRow
+}
+
+func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *sync.Mutex) {
+	for j := range jobs {
+		if stopWorking {
+			break
+		}
+
+		res := download(j.url, path.Join(p.OutputDir, j.name), p.MaxRetries)
+		updateStatistics(res, statsMutex)
+		writeToLog(res)
+		results <- res
+	}
+}
+
+func run(params CmdLineParams, stats Statistics) {
 	// flag that is raised on SIGINT signal
 	stopWorking = false
 
 	// statsMutex for locking statistics
 	var statsMutex = &sync.Mutex{}
 
-	// create downloads dir if it doesn't exist
-	os.MkdirAll(p.OutputDir, os.ModePerm)
-
 	// register signal handlers
 	registerSignalHandlers()
 
-	// parse command line parameters
-	p = parseCmdLineParams()
+	// create downloads dir if it doesn't exist
+	os.MkdirAll(p.OutputDir, os.ModePerm)
 
 	// load urls - entries to download
 	entries := parseDownloadsFromCsv(p.EntriesFilepath, p.SkippedLines+p.Offset)
@@ -531,6 +466,8 @@ func main() {
 		go worker(i, jobs, results, statsMutex)
 	}
 
+	// print output header
+	printStatsHeader()
 	// start sending jobs
 	for i := 0; i < n; i++ {
 		jobs <- entries[i]
@@ -542,6 +479,21 @@ func main() {
 		<-results
 	}
 
+	// print the final statistics
 	printStatistics()
 	printStatsEnd()
+}
+
+func main() {
+	// initialize statistics
+	// statistics should be initialized before parsing cmdLineParams
+	// parsing command line params might alter the statistics when loading progress
+	stats = Statistics{}
+	stats.StartTime = time.Now()
+
+	// parse command line parameters
+	p = parseCmdLineParams()
+
+	// start downloading
+	run(p, stats)
 }
