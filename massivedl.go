@@ -413,12 +413,7 @@ func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *
 	}
 }
 
-func main() {
-	// initialize statistics
-	// statistics should be initialized before parsing cmdLineParams
-	stats = Statistics{}
-	stats.StartTime = time.Now()
-
+func run(params CmdLineParams, stats Statistics) {
 	// flag that is raised on SIGINT signal
 	stopWorking = false
 
@@ -427,10 +422,6 @@ func main() {
 
 	// register signal handlers
 	registerSignalHandlers()
-
-	// parse command line parameters
-	p = parseCmdLineParams()
-	printStatsHeader()
 
 	// create downloads dir if it doesn't exist
 	os.MkdirAll(p.OutputDir, os.ModePerm)
@@ -472,6 +463,8 @@ func main() {
 		go worker(i, jobs, results, statsMutex)
 	}
 
+	// print output header
+	printStatsHeader()
 	// start sending jobs
 	for i := 0; i < n; i++ {
 		jobs <- entries[i]
@@ -483,6 +476,21 @@ func main() {
 		<-results
 	}
 
+	// print the final statistics
 	printStatistics()
 	printStatsEnd()
+}
+
+func main() {
+	// initialize statistics
+	// statistics should be initialized before parsing cmdLineParams
+	// parsing command line params might alter the statistics when loading progress
+	stats = Statistics{}
+	stats.StartTime = time.Now()
+
+	// parse command line parameters
+	p = parseCmdLineParams()
+
+	// start downloading
+	run(p, stats)
 }
