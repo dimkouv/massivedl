@@ -170,7 +170,7 @@ func parseCmdLineParams() CmdLineParams {
 func printUsage() {
 	usage := [...]string{
 		"NAME",
-		"\tmassivedl - Download a list of files in parallel batches",
+		"\tmassivedl v" + Version + " - Download a list of files in parallel batches",
 		"\nSYNOPSIS",
 		"\tmassivedl [OPTION]...",
 		"\nDESCRIPTION",
@@ -188,7 +188,10 @@ func printUsage() {
 		"\nAUTHOR",
 		"\tdimkouv <dimkouv@protonmail.com>",
 		"\tContributions at: https://github.com/dimkouv/massivedl",
-		"\n",
+		"\nBUILD INFO",
+		"\tVersion:    " + Version,
+		"\tBuildstamp: " + Buildstamp,
+		"\tGithash:    " + Githash,
 	}
 	fmt.Println(strings.Join(usage[:], "\n"))
 }
