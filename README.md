@@ -8,8 +8,8 @@ Download a large list of files in parallel.
 ```bash
 # for linux 64bit
 wget https://github.com/dimkouv/massivedl/releases/download/v1.2/massivedl_linux_amd64
-chmod +x massivedl_linux_x86_64
-mv massivedl_linux_x86_64 /usr/local/bin/massivedl
+chmod +x massivedl_linux_amd64
+mv massivedl_linux_amd64 /usr/local/bin/massivedl
 ```
 
 ## Usage
