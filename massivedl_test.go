@@ -48,7 +48,7 @@ func TestAskUserBool(t *testing.T) {
 func TestParseDownloadsFromCsv(t *testing.T) {
 	downloads := parseDownloadsFromCsv("./examples/list-of-photos.csv", 1)
 
-	if len(downloads) != 11 {
-		t.Errorf("examples/list-of-photos.csv returned %d entries instead of 11\n", len(downloads))
+	if len(downloads) != 12 {
+		t.Errorf("examples/list-of-photos.csv returned %d entries instead of 12\n", len(downloads))
 	}
 }
