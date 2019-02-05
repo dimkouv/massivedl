@@ -15,3 +15,5 @@ downloads/
 *.log
 massivedl
 .vscode/
+
+bin/
