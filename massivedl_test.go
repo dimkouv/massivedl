@@ -3,7 +3,6 @@ package main
 import (
 	"io"
 	"io/ioutil"
-	"os"
 	"testing"
 )
 
@@ -33,7 +32,7 @@ func TestAskUserBool(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = in.Seek(0, os.SEEK_SET)
+	_, err = in.Seek(0, io.SeekStart)
 	if err != nil {
 		t.Fatal(err)
 	}
