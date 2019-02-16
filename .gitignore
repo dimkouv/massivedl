@@ -17,3 +17,6 @@ massivedl
 .vscode/
 
 bin/
+
+#OSX system folder files 
+.DS_Store
