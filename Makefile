@@ -7,7 +7,7 @@ LDFLAGS = " \
 	-X main.Githash=$(GITHASH) \
 "
 
-all: massivedl_linux_amd64 massivedl_win_amd64.exe
+all: massivedl_linux_amd64 massivedl_win_amd64.exe massivedl_darwin_amd64
 
 massivedl_linux_amd64: massivedl.go utilities.go
 	env GOOS=linux GOARCH=amd64 \
@@ -16,3 +16,7 @@ massivedl_linux_amd64: massivedl.go utilities.go
 massivedl_win_amd64.exe: massivedl.go utilities.go
 	env GOOS=windows GOARCH=amd64 \
 		go build -ldflags $(LDFLAGS) -o bin/massivedl_win_amd64.exe
+
+massivedl_darwin_amd64: massivedl.go utilities.go
+	env GOOS=darwin GOARCH=amd64 \
+		go build -ldflags $(LDFLAGS) -o bin/massivedl_darwin_amd64
