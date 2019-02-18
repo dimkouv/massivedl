@@ -86,3 +86,17 @@ func askUserBool(msg string, defaultChoice bool, in *os.File) bool {
 
 	return defaultChoice
 }
+
+//Convert a float64 to time.Duration
+//@param quantity - the quantity of time to convert
+//@param unit - the time unit of conversion ("ns", "us" (or "µs"), "ms", "s", "m", "h")
+func floatToDuration(tQuantity float64, tUnit string) time.Duration {
+	stringTime := fmt.Sprintf("%g", tQuantity) + tUnit
+	duration, err := time.ParseDuration(stringTime)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return duration
+}
