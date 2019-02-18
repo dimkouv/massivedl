@@ -154,7 +154,7 @@ func parseCmdLineParams() CmdLineParams {
 					log.Fatal("Error parsing command line parameters")
 				}
 			} else if strings.Compare(os.Args[i], "-d") == 0 {
-				// -d ::: delay in seconds between each unparallel request starting time
+				// -d ::: delay in seconds between each unparallel request
 				p.DelayPerRequest, err = strconv.ParseFloat(os.Args[i+1], 64)
 
 				if err != nil || p.DelayPerRequest < 0 {
@@ -195,7 +195,7 @@ func printUsage() {
 		"\t-r <int> (default=1)           ::: Maximum number of retries for failed downloads",
 		"\t-d <float64> (default=0.0)     ::: Delay (in seconds) between each unparallel request",
 		"\nEXAMPLE",
-		"\tmassivedl -p 10 -i data.csv -s 1 -o downloads",
+		"\tmassivedl -p 10 -i data.csv -s 1 -o downloads -d 2.3",
 		"\nAUTHOR",
 		"\tdimkouv <dimkouv@protonmail.com>",
 		"\tContributions at: https://github.com/dimkouv/massivedl",
@@ -424,6 +424,8 @@ func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *
 		updateStatistics(res, statsMutex)
 		writeToLog(res)
 		results <- res
+
+		time.Sleep(floatToDuration(p.DelayPerRequest, "s"))
 	}
 }
 
