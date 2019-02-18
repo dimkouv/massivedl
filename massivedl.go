@@ -154,7 +154,7 @@ func parseCmdLineParams() CmdLineParams {
 					log.Fatal("Error parsing command line parameters")
 				}
 			} else if strings.Compare(os.Args[i], "-d") == 0 {
-				// -d ::: delay in seconds between each unparallel request
+				// -d ::: delay in seconds between each unparalleled request
 				p.DelayPerRequest, err = strconv.ParseFloat(os.Args[i+1], 64)
 
 				if err != nil || p.DelayPerRequest < 0 {
@@ -193,7 +193,7 @@ func printUsage() {
 		"\t-s <int> (default=0)           ::: Number of skipped lines from input csv",
 		"\t-o <str> (default='downloads') ::: Directory to place the downloads",
 		"\t-r <int> (default=1)           ::: Maximum number of retries for failed downloads",
-		"\t-d <float64> (default=0.0)     ::: Delay (in seconds) between each unparallel request",
+		"\t-d <float64> (default=0.0)     ::: Delay (in seconds) between each unparalleled request",
 		"\nEXAMPLE",
 		"\tmassivedl -p 10 -i data.csv -s 1 -o downloads -d 2.3",
 		"\nAUTHOR",
