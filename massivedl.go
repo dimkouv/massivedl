@@ -36,12 +36,13 @@ type dataEntry struct {
 
 // CmdLineParams - Configuration struct
 type CmdLineParams struct {
-	ConcurrentRequests int    `json:"concurrentRequests"`
-	EntriesFilepath    string `json:"entriesFilepath"`
-	SkippedLines       int    `json:"skippedLines"`
-	OutputDir          string `json:"outputDir"`
-	MaxRetries         int    `json:"maxRetries"`
-	Offset             int    `json:"offset"`
+	ConcurrentRequests int     `json:"concurrentRequests"`
+	EntriesFilepath    string  `json:"entriesFilepath"`
+	SkippedLines       int     `json:"skippedLines"`
+	OutputDir          string  `json:"outputDir"`
+	MaxRetries         int     `json:"maxRetries"`
+	Offset             int     `json:"offset"`
+	DelayPerRequest    float64 `json:"delayPerRequest"`
 }
 
 // Statistics - statistics about the downloads
@@ -110,7 +111,7 @@ func parseDownloadsFromCsv(filename string, offset int) []dataEntry {
 }
 
 func parseCmdLineParams() CmdLineParams {
-	p := CmdLineParams{10, "", 0, "downloads", 1, 0}
+	p := CmdLineParams{10, "", 0, "downloads", 1, 0, 0.0}
 	var err error
 
 	if strIndexOf(os.Args, "--help") >= 0 {
@@ -152,6 +153,15 @@ func parseCmdLineParams() CmdLineParams {
 					printUsage()
 					log.Fatal("Error parsing command line parameters")
 				}
+			} else if strings.Compare(os.Args[i], "-d") == 0 {
+				// -d ::: delay in seconds between each unparalleled request
+				p.DelayPerRequest, err = strconv.ParseFloat(os.Args[i+1], 64)
+
+				if err != nil || p.DelayPerRequest < 0 {
+					printUsage()
+					log.Fatal("Error parsing command line parameters")
+				}
+
 			}
 		}
 	}
@@ -183,8 +193,9 @@ func printUsage() {
 		"\t-s <int> (default=0)           ::: Number of skipped lines from input csv",
 		"\t-o <str> (default='downloads') ::: Directory to place the downloads",
 		"\t-r <int> (default=1)           ::: Maximum number of retries for failed downloads",
+		"\t-d <float64> (default=0.0)     ::: Delay (in seconds) between each unparalleled request",
 		"\nEXAMPLE",
-		"\tmassivedl -p 10 -i data.csv -s 1 -o downloads",
+		"\tmassivedl -p 10 -i data.csv -s 1 -o downloads -d 2.3",
 		"\nAUTHOR",
 		"\tdimkouv <dimkouv@protonmail.com>",
 		"\tContributions at: https://github.com/dimkouv/massivedl",
@@ -413,6 +424,8 @@ func worker(id int, jobs <-chan dataEntry, results chan<- logEntry, statsMutex *
 		updateStatistics(res, statsMutex)
 		writeToLog(res)
 		results <- res
+
+		time.Sleep(floatToDuration(p.DelayPerRequest, "s"))
 	}
 }
 
