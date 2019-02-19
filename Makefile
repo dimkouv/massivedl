@@ -1,6 +1,6 @@
 BUILDSTAMP = `date -u '+%Y-%m-%d_%I:%M:%S%p'`
 GITHASH = `git rev-parse HEAD`
-VERSION = 1.2
+VERSION = 1.3
 LDFLAGS = " \
 	-X main.Version=$(VERSION) \
 	-X main.Buildstamp=$(BUILDSTAMP) \
