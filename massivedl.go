@@ -90,8 +90,6 @@ func parseDownloadsFromCsv(filename string, offset int) []dataEntry {
 	for i := 0; i < offset; i++ {
 		scanner.Scan()
 	}
-
-	/* read the lines */
 	for scanner.Scan() {
 		parts := strings.Split(scanner.Text(), ",")
 		if len(parts) != 2 {
@@ -106,7 +104,6 @@ func parseDownloadsFromCsv(filename string, offset int) []dataEntry {
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
-
 	return entries
 }
 
@@ -263,7 +260,11 @@ func printStatsEnd() {
 }
 
 func getSaveFilesDirectory() string {
-	homeDir := getUserHomeDirectory()
+	homeDir, err := getUserHomeDirectory()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	saveFilesDirPath := path.Join(homeDir, ".massivedl")
 
 	if !fileOrPathExists(saveFilesDirPath) {
@@ -278,18 +279,17 @@ func getSaveFilePath() string {
 	return path.Join(getSaveFilesDirectory(), filename)
 }
 
-// saves current progress to a save file
 func saveProgress() {
 	var err error
 
-	wd, err := os.Getwd()
+	workdir, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	var save SaveEntry
 	p.Offset = n - stats.FilesRemaining - 1
-	save.WorkingDirectory = wd
+	save.WorkingDirectory = workdir
 	save.Parameters = p
 	save.Stats = stats
 
@@ -310,7 +310,6 @@ func saveProgress() {
 	}
 }
 
-// loads progress from a saved progress file
 func loadProgress(saveFile string) CmdLineParams {
 	var err error
 
@@ -465,8 +464,8 @@ func run(params CmdLineParams, stats Statistics) {
 	// create results channel
 	results := make(chan logEntry, n)
 
-	// run output coroutine
-	// this coroutine updates the statics in stdout
+	// run output goroutine
+	// this goroutine updates the statics in stdout
 	go func() {
 		for !stopWorking {
 			printStatistics()
@@ -474,7 +473,7 @@ func run(params CmdLineParams, stats Statistics) {
 		}
 	}()
 
-	// init worker coroutines
+	// init worker goroutines
 	for i := 0; i < numWorkers; i++ {
 		go worker(i, jobs, results, statsMutex)
 	}

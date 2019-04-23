@@ -15,24 +15,15 @@ func writeToLog(res logEntry) {
 }
 
 func fileOrPathExists(path string) bool {
-	_, err := os.Stat(path)
-	if err == nil {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return true
 	}
-	if os.IsNotExist(err) {
-		return false
-	}
-
-	log.Fatal(err)
 	return false
 }
 
-func getUserHomeDirectory() string {
+func getUserHomeDirectory() (string, error) {
 	usr, err := user.Current()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return usr.HomeDir
+	return usr.HomeDir, err
 }
 
 func getCurrentTimestamp() int64 {
@@ -58,32 +49,31 @@ func askUserBool(msg string, defaultChoice bool, in *os.File) bool {
 	choicesTrue := []string{"yes", "1", "y", "yeah"}
 	choicesFalse := []string{"no", "0", "n", "nah"}
 
+	if defaultChoice {
+		fmt.Printf("\n %s [Y/n]: ", msg)
+	} else {
+		fmt.Printf("\n %s [y/N]: ", msg)
+	}
+
 	reader := bufio.NewReader(in)
 
-	fmt.Print("\n", msg)
-	if defaultChoice {
-		fmt.Print(" [Y/n]")
-	} else {
-		fmt.Print(" [y/N]")
+	text, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatal(err)
 	}
-	fmt.Print(": ")
 
-	text, _ := reader.ReadString('\n')
+	text = strings.ToLower(text)
 
 	if strings.HasSuffix(text, "\n") {
 		text = strings.Split(text, "\n")[0]
 	}
 
-	reply := strings.ToLower(text)
-
-	if strIndexOf(choicesTrue, reply) >= 0 {
+	if strIndexOf(choicesTrue, text) >= 0 {
 		return true
 	}
-
-	if strIndexOf(choicesFalse, reply) >= 0 {
+	if strIndexOf(choicesFalse, text) >= 0 {
 		return false
 	}
-
 	return defaultChoice
 }
 
