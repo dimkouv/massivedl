@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -108,89 +108,47 @@ func parseDownloadsFromCsv(filename string, offset int) []dataEntry {
 }
 
 func parseCmdLineParams() CmdLineParams {
-	p := CmdLineParams{10, "", 0, "downloads", 1, 0, 0.0}
-	var err error
+	var p CmdLineParams
 
-	if strIndexOf(os.Args, "--help") >= 0 {
-		// just print help message and exit
-		printUsageAndExit()
-	} else if len(os.Args) == 3 && strings.Compare("--load", os.Args[1]) == 0 {
-		// check if user wants to load a saved progress
-		p = loadProgress(os.Args[2])
-	} else {
-		// read parameters
-		for i := 0; i < len(os.Args)-1; i++ {
-			if strings.Compare(os.Args[i], "-p") == 0 {
-				// -p ::: number of parallel requests pool
-				p.ConcurrentRequests, err = strconv.Atoi(os.Args[i+1])
+	var version = flag.Bool("v", false, "Print version info")
+	var loadedFile = flag.String("l", "", "Saved progress file to load")
+	var entriesFilepath = flag.String("i", "", "Input downloads csv file")
+	var concurrentRequests = flag.Int("p", 10, "Number of parallel requests")
+	var skippedLines = flag.Int("s", 1, "Number of skipped lines from input")
+	var outputDir = flag.String("o", "downloads", "Directory to place downloads")
+	var maxRetries = flag.Int("r", 3, "Number of retries for failed downloads")
+	var delayPerRequest = flag.Float64("d", 1, "Delay per request in seconds")
+	flag.Parse()
 
-				if err != nil {
-					printUsage()
-					log.Fatal("Error parsing command line parameters")
-				}
-			} else if strings.Compare(os.Args[i], "-i") == 0 {
-				// -i ::: entries file path
-				p.EntriesFilepath = os.Args[i+1]
-			} else if strings.Compare(os.Args[i], "-s") == 0 {
-				// -s ::: number of skipped lines
-				p.SkippedLines, err = strconv.Atoi(os.Args[i+1])
-
-				if err != nil {
-					printUsage()
-					log.Fatal("Error parsing command line parameters")
-				}
-			} else if strings.Compare(os.Args[i], "-o") == 0 {
-				// -o ::: output - downloads directory
-				p.OutputDir = os.Args[i+1]
-			} else if strings.Compare(os.Args[i], "-r") == 0 {
-				// -r ::: maximum number of retries
-				p.MaxRetries, err = strconv.Atoi(os.Args[i+1])
-
-				if err != nil || p.MaxRetries < 0 {
-					printUsage()
-					log.Fatal("Error parsing command line parameters")
-				}
-			} else if strings.Compare(os.Args[i], "-d") == 0 {
-				// -d ::: delay in seconds between each unparalleled request
-				p.DelayPerRequest, err = strconv.ParseFloat(os.Args[i+1], 64)
-
-				if err != nil || p.DelayPerRequest < 0 {
-					printUsage()
-					log.Fatal("Error parsing command line parameters")
-				}
-
-			}
-		}
+	if *version || *entriesFilepath == "" {
+		printVersionInfo()
+		os.Exit(0)
 	}
 
-	if strings.Compare(p.EntriesFilepath, "") == 0 {
-		fmt.Println(
-			"You have to provide input csv file using -i cmd line param.\n",
-			"\rUse: massivedl --help for full reference.",
-		)
-		os.Exit(1)
+	if *loadedFile != "" {
+		p = loadProgress(*loadedFile)
+	} else {
+		p.EntriesFilepath = *entriesFilepath
+		p.ConcurrentRequests = *concurrentRequests
+		p.SkippedLines = *skippedLines
+		p.OutputDir = *outputDir
+		p.MaxRetries = *maxRetries
+		p.DelayPerRequest = *delayPerRequest
 	}
 
 	return p
 }
 
-func printUsage() {
+func printVersionInfo() {
 	usage := [...]string{
 		"NAME",
-		"\tmassivedl v" + Version + " - Download a list of files in parallel batches",
+		"\tmassivedl v" + Version + " - Download a list of files in parallel",
 		"\nSYNOPSIS",
 		"\tmassivedl [OPTION]...",
 		"\nDESCRIPTION",
 		"\tmassivedl is a free utility for non-interactive download of files from the web.",
 		"\tThis utility can be used to download a large list of files from the web in parallel batches.",
 		"\tYou can get really good results when the server you're downloading from has low response time.",
-		"\nOPTIONS",
-		"\t-p <int> (default=10)          ::: Maximum number of parallel requests",
-		"\t-i <str>                       ::: Input csv file with the list of urls",
-		"\t-s <int> (default=0)           ::: Number of skipped lines from input csv",
-		"\t-o <str> (default='downloads') ::: Directory to place the downloads",
-		"\t-r <int> (default=1)           ::: Maximum number of retries for failed downloads",
-		"\t-d <float64> (default=0.0)     ::: Delay (in seconds) between each unparalleled request",
 		"\nEXAMPLE",
 		"\tmassivedl -p 10 -i data.csv -s 1 -o downloads -d 2.3",
 		"\nAUTHOR",
@@ -202,11 +160,6 @@ func printUsage() {
 		"\tGithash:    " + Githash,
 	}
 	fmt.Println(strings.Join(usage[:], "\n"))
-}
-
-func printUsageAndExit() {
-	printUsage()
-	os.Exit(0)
 }
 
 func updateStatistics(log logEntry, statsMutex *sync.Mutex) {
