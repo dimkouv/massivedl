@@ -91,7 +91,7 @@ func parseDownloadsFromCsv(filename string, offset int) []dataEntry {
 		scanner.Scan()
 	}
 	for scanner.Scan() {
-		parts := strings.Split(scanner.Text(), ",")
+		parts := strings.SplitN(scanner.Text(), ",", 2)
 		if len(parts) != 2 {
 			continue
 		}
