@@ -9,14 +9,14 @@ LDFLAGS = " \
 
 all: massivedl_linux_amd64 massivedl_win_amd64.exe massivedl_darwin_amd64
 
-massivedl_linux_amd64: massivedl.go utilities.go
+massivedl_linux_amd64: cmd/* internal/*
 	env GOOS=linux GOARCH=amd64 \
-		go build -ldflags $(LDFLAGS) -o bin/massivedl_linux_amd64
+		go build -ldflags $(LDFLAGS) -o bin/massivedl_linux_amd64 ./cmd/massivedl/...
 
-massivedl_win_amd64.exe: massivedl.go utilities.go
+massivedl_win_amd64.exe: cmd/* internal/*
 	env GOOS=windows GOARCH=amd64 \
-		go build -ldflags $(LDFLAGS) -o bin/massivedl_win_amd64.exe
+		go build -ldflags $(LDFLAGS) -o bin/massivedl_win_amd64.exe ./cmd/massivedl/...
 
-massivedl_darwin_amd64: massivedl.go utilities.go
+massivedl_darwin_amd64: cmd/* internal/*
 	env GOOS=darwin GOARCH=amd64 \
-		go build -ldflags $(LDFLAGS) -o bin/massivedl_darwin_amd64
+		go build -ldflags $(LDFLAGS) -o bin/massivedl_darwin_amd64 ./cmd/massivedl/...
