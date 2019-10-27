@@ -19,6 +19,7 @@ jobs: # basic units of work in a run
 
           # store the results of our tests in the $TEST_RESULTS directory
           command: |
+            go get ./...
             go test ./...
 
 workflows:
